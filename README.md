@@ -27,3 +27,7 @@ You should see a device called something like `/dev/tty.SLAB_USBtoUART`. The `/d
 Open up this folder in VSCode and it should prompt you to install Platform IO. If it doesn't, just search for it in the extensions tab and install it.
 
 Restart VSCode and the extension icon should appear in the sidebar. 
+
+## Notes
+### HTTP restrictions 
+A bunch of stuff doesn't work because clients are on HTTP. For instance: the [clipboard](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/clipboard) API is only available via HTTPS, so you can't copy codes/addresses to the users' clipboard.

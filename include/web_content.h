@@ -39,16 +39,14 @@ const char* html_content = R"rawliteral(
     <p>THIS SERVER IS RUNNING ON A TINY BOARD. 💸</p>
     <p>The claim button will be ready at 5 minutes!</p>
     
-    <div id="code"></div>
-        
-    <button class="button" id="registerButton" style="display: block;">Register</button>
-    <button class="button" id="claimButton" disabled style="display: block;">Claim Code</button>
-    <button class="button" id="api-req" >Make API request test</button>
-    <button class="button" id="ip" >Input IP</button>
-    <button class="button" id="test-connection" onclick="testConnection()">Test Connection</button>
-
-
     <div id="timer" style="display: none;">Connected for: 00:00:00</div>
+    
+    <div id="buttons">
+      <button class="button" id="registerButton" style="display: none;">Register</button>
+      <button class="button" id="claimButton" disabled style="display: none;">Claim Code</button>
+      <button class="button" onclick="testAPI()">Test API request</button>
+    </div>
+        
 
     <div class="container">
       Powered by
@@ -76,38 +74,10 @@ const char* html_content = R"rawliteral(
     </div>
   </div>
   <script>
-    const serverIP = '';
-    
-    document.getElementById('api-req').addEventListener('click', function() {
-      fetch(`http://${serverIP}/register_device?uid=1234`).then(response => response.json()).then(data => {
-        alert('API request worked! ' + data.name);
-      });
-    });
-
-
-    document.getElementById('ip').addEventListener('click', function() {
-      const ip = prompt('Enter IP address of server', serverIP);
-      if (ip) {
-        alert('IP address set to: ' + ip);
-        serverIP = ip;
-      }
-    });
-
-    async function testConnection() {
-      const url = `http://${serverIP}/ping`;
-      try {
-        const response = await fetch(url, { method: 'GET' });
-        if (response.ok) {
-          alert('Connection successful!');
-        }
-      } catch (error) {
-        alert(`No response from ${serverIP}`);
-      }
-    }
-
     let connectionTimer;
     let connectedTime = 0;
     let userId = getOrGenerateUserId();
+    console.log("userId after initialization:", userId);
 
     document.addEventListener('DOMContentLoaded', function() {
       if (userId && getCookie('registered')) {
@@ -126,6 +96,7 @@ const char* html_content = R"rawliteral(
     }
 
     function showClaimButton() {
+      console.log("userId inside showClaimButton:", userId);
       const claimButton = document.getElementById('claimButton');
       claimButton.style.display = 'block';
       claimButton.addEventListener('click', function() {
@@ -136,24 +107,54 @@ const char* html_content = R"rawliteral(
 
     function checkClaimAvailability(userId) {
       setInterval(() => {
-        if (connectedTime >= 5) { // 5 minutes in seconds
+        if (connectedTime >= 10) { // 5 minutes in seconds
           document.getElementById('claimButton').disabled = false;
         }
       }, 1000); // Check every second
     }
 
-    function claimCode(userId) {
-      fetch(`/claim_code?uid=${userId}`)
-        .then(response => response.text())
-        .then(code => {
+    function testAPI() {
+      // hit endpoint "/date" to get the date and time
+      // we don't care about response, just need to trigger this on the server
+      fetch(`/date`)
+        .then(response => {
           if (response.ok) {
-            navigator.clipboard.writeText(code).then(() => {
-              alert('Code copied to clipboard: ' + code);
-              document.getElementById('claimButton').disabled = true;
+            return response.text().then(date => {
+              console.log("Date received from server:", date)
             });
           } else {
-            alert('Error: ' + code);
+            return response.text().then(errorMsg => {
+              alert('Error: ' + errorMsg);
+            });
           }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          alert('Error: ' + error.message);
+        });
+    }
+    
+    function claimCode(userId) {
+      console.log("Claiming code for user", userId)
+      fetch(`/claim_code?uid=${userId}`)
+        .then(response => {
+          if (response.ok) {
+            return response.text().then(code => {
+              console.log("Code received from server:", code)
+              // Create a button to open the URL
+              createOpenUrlButton(url);
+            });
+          } else if (response.status === 403) {
+            alert('You must be connected for at least 5 minutes to claim a code.');
+          } else {
+            return response.text().then(errorMsg => {
+              alert('Error: ' + errorMsg);
+            });
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          alert('Error: ' + error.message);
         });
     }
 
@@ -161,20 +162,24 @@ const char* html_content = R"rawliteral(
       let userId = getCookie('userId');
       if (!userId) {
         userId = generateUniqueId();
-        setCookie('userId', userId, 1); // Store for 1 day
+        setCookie('userId', userId, 5); // Store for 5 minutes
       }
       return userId;
     }
 
     function generateUniqueId() {
-      return crypto.randomUUID();
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0;
+        var v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
     }
 
-    function setCookie(name, value, days) {
+    function setCookie(name, value, minutes) {
       let expires = "";
-      if (days) {
+      if (minutes) {
         let date = new Date();
-        date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+        date.setTime(date.getTime() + (minutes * 60 * 1000));
         expires = "; expires=" + date.toUTCString();
       }
       document.cookie = name + "=" + (value || "")  + expires + "; path=/";
@@ -194,7 +199,7 @@ const char* html_content = R"rawliteral(
     function registerDevice(userId) {
       fetch(`/register_device?uid=${userId}`).then(response => {
         if (response.ok) {
-          setCookie('registered', 'true', 1); // Store registration state for 1 day
+          setCookie('registered', 'true', 5); // Store registration state for 1 day
           showClaimButton();
           startConnectionTimer();
           document.getElementById('registerButton').style.display = 'none';
@@ -220,6 +225,19 @@ const char* html_content = R"rawliteral(
       let seconds = connectedTime % 60;
       let formattedTime = [hours, minutes, seconds].map(unit => String(unit).padStart(2, '0')).join(':');
       document.getElementById('timer').innerText = 'Connected for: ' + formattedTime;
+    }
+
+    function openUrlInNewTab(url) {
+      window.open(url, '_blank').focus();
+    }
+
+    function createOpenUrlButton(url) {
+      const container = document.querySelector('.buttons');
+      const button = document.createElement('button');
+      button.classList.add('button');
+      button.textContent = 'Get $5 💵';
+      button.addEventListener('click', () => openUrlInNewTab(url));
+      container.appendChild(button);
     }
   </script>
 </body>
